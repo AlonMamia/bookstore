@@ -1,0 +1,8 @@
+ALTER TABLE users
+ALTER COLUMN role TYPE BIGINT
+USING role::BIGINT;
+
+ALTER TABLE users
+ADD CONSTRAINT fk_users_role
+FOREIGN KEY (role)
+REFERENCES roles(id);

@@ -1,6 +1,7 @@
 package com.alon.bookstore.auth;
 
 import com.alon.bookstore.user.Role;
+import com.alon.bookstore.user.RoleRepository;
 import com.alon.bookstore.user.User;
 import com.alon.bookstore.user.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
@@ -26,15 +28,18 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
 
     public AuthResponse login(
             LoginRequest request,
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse
     ) {
+
         Authentication authenticationRequest =
                 UsernamePasswordAuthenticationToken.unauthenticated(
                         request.email(),
@@ -43,6 +48,12 @@ public class AuthService {
 
         Authentication authentication =
                 authenticationManager.authenticate(authenticationRequest);
+
+        sessionAuthenticationStrategy.onAuthentication(
+                authentication,
+                httpRequest,
+                httpResponse
+        );
 
         SecurityContext context =
                 SecurityContextHolder.createEmptyContext();
@@ -57,12 +68,21 @@ public class AuthService {
                 httpResponse
         );
 
-        Role role = authentication.getAuthorities()
+        String roleTitle = authentication.getAuthorities()
                 .stream()
                 .findFirst()
-                .map(authority -> Objects.requireNonNull(authority.getAuthority()).replace("ROLE_", ""))
-                .map(Role::valueOf)
+                .map(authority ->
+                        Objects.requireNonNull(authority.getAuthority())
+                                .replace("ROLE_", "")
+                )
                 .orElseThrow();
+
+        Role role = roleRepository.findByTitle(roleTitle)
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "Role not found: " + roleTitle
+                        )
+                );
 
         log.info("User logged in: {}", authentication.getName());
 
@@ -86,7 +106,14 @@ public class AuthService {
                 passwordEncoder.encode(request.getPassword())
         );
 
-        user.setRole(Role.USER);
+        Role role = roleRepository.findByTitle(request.getRole())
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Invalid role: " + request.getRole()
+                        )
+                );
+
+        user.setRole(role);
 
         userRepository.save(user);
 

@@ -1,0 +1,41 @@
+name: CI - Pre-Prod (pp)
+
+on:
+  push:
+    branches: ["pp"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-path: ${{ steps.package.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Cache Maven
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+      - name: Build and test
+        run: mvn -B -U clean verify
+      - name: Package artifact
+        id: package
+        run: mvn -B -DskipTests=false -U package
+
+#  deploy:
+#    needs: build
+#    runs-on: ubuntu-latest
+#    environment: pp
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Deploy to pre-prod (placeholder)
+#        run: |
+#          echo "This job is a placeholder for your pre-prod deployment."
+#          echo "Use secrets (SSH_PRIVATE_KEY, KUBE_CONFIG, etc.) and replace this step with real commands."

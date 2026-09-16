@@ -1,0 +1,45 @@
+name: CI / CD - Prod
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Cache Maven
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+      - name: Build and test
+        run: mvn -B -U clean verify
+
+#  deploy:
+#    needs: build
+#    runs-on: ubuntu-latest
+#    environment: production
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Build & push Docker image (optional)
+#        if: secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN
+#        uses: docker/build-push-action@v4
+#        with:
+#          context: .
+#          push: true
+#          tags: |
+#            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore:latest
+#            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore:${{ github.sha }}
+#      - name: Production deploy placeholder
+#        run: |
+#          echo "Production deployment step is repository-specific."
+#          echo "Replace this with your deploy (kubectl, ssh, helm, etc.) using repository secrets and the production environment approvals."

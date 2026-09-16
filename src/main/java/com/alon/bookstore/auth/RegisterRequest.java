@@ -20,4 +20,7 @@ public class RegisterRequest {
     @Size(min = 10, max = 100)
     private String password;
 
+    @NotBlank
+    private String role;
+
 }

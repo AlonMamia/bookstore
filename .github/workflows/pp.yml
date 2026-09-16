@@ -1,41 +1,62 @@
 name: CI - Pre-Prod (pp)
 
 on:
+  # מריץ את ה-Workflow בכל push לענף pp
   push:
-    branches: ["pp"]
-  workflow_dispatch: {}
+    branches:
+      - pp
+
+  # מריץ בדיקות לפני שמאשרים Pull Request לתוך pp
+  pull_request:
+    branches:
+      - pp
+
+  # מאפשר להריץ את ה-Workflow ידנית דרך GitHub Actions
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
-    outputs:
-      artifact-path: ${{ steps.package.outputs.artifact }}
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up JDK
+      # מוריד את קוד הפרויקט אל ה-GitHub Runner
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # מתקין Java 21 ושומר את Maven dependencies ב-cache
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
-      - name: Cache Maven
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2-
-      - name: Build and test
-        run: mvn -B -U clean verify
-      - name: Package artifact
-        id: package
-        run: mvn -B -DskipTests=false -U package
+          java-version: "21"
+          cache: maven
 
+      # מבצע clean, מקמפל את הפרויקט, מריץ בדיקות ויוצר את קובץ ה-JAR
+      - name: Build and test
+        run: mvn --batch-mode clean verify
+
+# נוסיף את ה-job הזה כאשר יהיה יעד אמיתי לפריסת Pre-Production.
+#
 #  deploy:
-#    needs: build
+#    name: Deploy to Pre-Production
+#
+#    # הפריסה תתחיל רק לאחר שה-build והבדיקות הסתיימו בהצלחה
+#    needs: build-and-test
+#
 #    runs-on: ubuntu-latest
+#
+#    # מקשר את ה-job ל-GitHub Environment בשם pp.
+#    # שם נוכל להגדיר secrets, הרשאות וכללי אישור לפריסה.
 #    environment: pp
+#
 #    steps:
-#      - uses: actions/checkout@v4
-#      - name: Deploy to pre-prod (placeholder)
+#      # כל job רץ על מכונה חדשה, ולכן צריך להוריד שוב את הקוד
+#      - name: Checkout repository
+#        uses: actions/checkout@v4
+#
+#      # Placeholder בלבד — אינו מבצע כרגע פריסה אמיתית
+#      - name: Deploy to pre-production
 #        run: |
-#          echo "This job is a placeholder for your pre-prod deployment."
-#          echo "Use secrets (SSH_PRIVATE_KEY, KUBE_CONFIG, etc.) and replace this step with real commands."
+#          echo "This job is a placeholder for the pre-production deployment."
+#          echo "Replace it with deployment commands after choosing a hosting provider."

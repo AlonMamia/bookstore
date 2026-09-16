@@ -1,45 +1,68 @@
-name: CI / CD - Prod
+name: CI - Production
 
 on:
+  # מריץ את ה-Workflow בכל push לענף main
   push:
-    branches: ["main"]
-  workflow_dispatch: {}
+    branches:
+      - main
+
+  # מריץ בדיקות לפני שמאשרים Pull Request לתוך main
+  pull_request:
+    branches:
+      - main
+
+  # מאפשר להריץ את ה-Workflow ידנית דרך GitHub Actions
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up JDK
+      # מוריד את קוד הפרויקט אל ה-GitHub Runner
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # מתקין Java 21 ושומר את Maven dependencies ב-cache
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
-      - name: Cache Maven
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2-
-      - name: Build and test
-        run: mvn -B -U clean verify
+          java-version: "21"
+          cache: maven
 
+      # מבצע clean, מקמפל את הפרויקט, מריץ בדיקות ויוצר את קובץ ה-JAR
+      - name: Build and test
+        run: mvn --batch-mode clean verify
+
+# נוסיף את ה-job הזה כאשר יהיה יעד אמיתי לפריסת Production.
+#
 #  deploy:
-#    needs: build
+#    name: Deploy to Production
+#
+#    # הפריסה תתחיל רק לאחר שה-build והבדיקות הסתיימו בהצלחה
+#    needs: build-and-test
+#
 #    runs-on: ubuntu-latest
+#
+#    # מקשר את ה-job ל-GitHub Environment בשם production.
+#    # שם נוכל להגדיר secrets, הרשאות ואישור ידני לפני פריסה.
 #    environment: production
+#
 #    steps:
-#      - uses: actions/checkout@v4
-#      - name: Build & push Docker image (optional)
-#        if: secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN
-#        uses: docker/build-push-action@v4
-#        with:
-#          context: .
-#          push: true
-#          tags: |
-#            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore:latest
-#            ${{ secrets.DOCKERHUB_USERNAME }}/bookstore:${{ github.sha }}
-#      - name: Production deploy placeholder
+#      # כל job רץ על מכונה חדשה, ולכן צריך להוריד שוב את הקוד
+#      - name: Checkout repository
+#        uses: actions/checkout@v4
+#
+#      # בשלב הזה נתחבר בעתיד ל-Container Registry,
+#      # נבנה Docker Image ונעלה אותו ל-Registry.
+#      #
+#      # ה-Registry יכול להיות GitHub Container Registry,
+#      # AWS ECR או Docker Hub — בהתאם ליעד הפריסה שנבחר.
+#
+#      # Placeholder בלבד — אינו מבצע כרגע פריסה אמיתית
+#      - name: Deploy to production
 #        run: |
-#          echo "Production deployment step is repository-specific."
-#          echo "Replace this with your deploy (kubectl, ssh, helm, etc.) using repository secrets and the production environment approvals."
+#          echo "This job is a placeholder for the production deployment."
+#          echo "Replace it with deployment commands after choosing a hosting provider."

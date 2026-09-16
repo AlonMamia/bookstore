@@ -1,6 +1,7 @@
 package com.alon.bookstore.auth;
 
 import com.alon.bookstore.user.Role;
+import com.alon.bookstore.user.RoleRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -10,14 +11,15 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Objects;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
 public class AuthController {
 
-
     private final AuthService authService;
+    private final RoleRepository roleRepository;
 
     @GetMapping("/csrf")
     public CsrfToken csrf(CsrfToken csrfToken) {
@@ -51,11 +53,15 @@ public class AuthController {
             Authentication authentication
     ) {
 
-        Role role = authentication.getAuthorities()
+        String roleTitle = authentication.getAuthorities()
                 .stream()
                 .findFirst()
-                .map(authority -> authority.getAuthority().replace("ROLE_", ""))
-                .map(Role::valueOf)
+                .map(authority ->
+                        Objects.requireNonNull(authority.getAuthority()).replace("ROLE_", "")
+                )
+                .orElseThrow();
+
+        Role role = roleRepository.findByTitle(roleTitle)
                 .orElseThrow();
 
         return ResponseEntity.ok(

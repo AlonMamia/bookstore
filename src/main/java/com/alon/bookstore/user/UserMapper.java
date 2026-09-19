@@ -1,9 +1,6 @@
 package com.alon.bookstore.user;
 
-import com.alon.bookstore.auth.RegisterRequest;
 import org.mapstruct.Mapper;
-
-import java.util.List;
 
 @Mapper(componentModel = "spring")
 public interface UserMapper {

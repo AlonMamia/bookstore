@@ -1,9 +1,6 @@
 package com.alon.bookstore.auth;
 
-import com.alon.bookstore.user.Role;
-import com.alon.bookstore.user.RoleRepository;
-import com.alon.bookstore.user.User;
-import com.alon.bookstore.user.UserRepository;
+import com.alon.bookstore.user.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -33,8 +30,9 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
+    private final UserMapper userMapper;
 
-    public AuthResponse login(
+    public UserDtoOut login(
             LoginRequest request,
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse
@@ -68,28 +66,16 @@ public class AuthService {
                 httpResponse
         );
 
-        String roleTitle = authentication.getAuthorities()
-                .stream()
-                .findFirst()
-                .map(authority ->
-                        Objects.requireNonNull(authority.getAuthority())
-                                .replace("ROLE_", "")
-                )
-                .orElseThrow();
+        if (!(authentication.getPrincipal() instanceof CustomUserDetails principal)) {
+            throw new IllegalStateException("Unexpected authentication principal");
+        }
 
-        Role role = roleRepository.findByTitle(roleTitle)
-                .orElseThrow(() ->
-                        new IllegalStateException(
-                                "Role not found: " + roleTitle
-                        )
-                );
+        User user = principal.getUser();
 
-        log.info("User logged in: {}", authentication.getName());
+        UserDtoOut userDto = userMapper.toDto(user);
+        log.info("User logged in: {}", userDto);
 
-        return new AuthResponse(
-                authentication.getName(),
-                role
-        );
+        return userDto;
     }
 
     public void register(RegisterRequest request) {
@@ -114,6 +100,9 @@ public class AuthService {
                 );
 
         user.setRole(role);
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        user.setDateOfBirth(request.getDateOfBirth());
 
         userRepository.save(user);
 

@@ -100,6 +100,9 @@ public class AuthService {
                 );
 
         user.setRole(role);
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        user.setDateOfBirth(request.getDateOfBirth());
 
         userRepository.save(user);
 

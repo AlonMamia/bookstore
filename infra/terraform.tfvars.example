@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and adjust. terraform.tfvars is gitignored - never commit real
+# values if you consider any of them sensitive (none of these are secrets by default, but
+# your org's policy may differ).
+
+aws_region   = "us-east-1"
+project_name = "bookstore"
+
+github_org  = "AlonMamia"
+github_repo = "bookstore"
+
+# No domain yet: leave certificate_arn empty and the ALB serves HTTP only. Once you own a
+# domain, request/validate an ACM certificate for it, set certificate_arn, set the two
+# hostnames below to match, and re-apply - the HTTPS listener + redirect turn on with no
+# other changes.
+certificate_arn = ""
+prod_hostname    = "api.bookstore.example"
+pp_hostname      = "pp-api.bookstore.example"
+
+prod_cors_allowed_origins = "https://bookstore.example"
+pp_cors_allowed_origins   = "https://pp.bookstore.example"
+
+# Keep the RDS instance protected until you're sure you want to allow destroy.
+rds_deletion_protection = true
+rds_skip_final_snapshot = false

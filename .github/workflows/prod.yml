@@ -11,8 +11,13 @@ on:
     branches:
       - main
 
-  # מאפשר להריץ את ה-Workflow ידנית דרך GitHub Actions
+  # מאפשר להריץ את ה-Workflow ידנית דרך GitHub Actions, ומאפשר rollback ל-tag קודם
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Existing ECR image tag to (re)deploy, e.g. for rollback. Leave empty to build+deploy the current commit."
+        required: false
+        type: string
 
 jobs:
   build-and-test:
@@ -36,33 +41,107 @@ jobs:
       - name: Build and test
         run: mvn --batch-mode clean verify
 
-# נוסיף את ה-job הזה כאשר יהיה יעד אמיתי לפריסת Production.
-#
-#  deploy:
-#    name: Deploy to Production
-#
-#    # הפריסה תתחיל רק לאחר שה-build והבדיקות הסתיימו בהצלחה
-#    needs: build-and-test
-#
-#    runs-on: ubuntu-latest
-#
-#    # מקשר את ה-job ל-GitHub Environment בשם production.
-#    # שם נוכל להגדיר secrets, הרשאות ואישור ידני לפני פריסה.
-#    environment: production
-#
-#    steps:
-#      # כל job רץ על מכונה חדשה, ולכן צריך להוריד שוב את הקוד
-#      - name: Checkout repository
-#        uses: actions/checkout@v4
-#
-#      # בשלב הזה נתחבר בעתיד ל-Container Registry,
-#      # נבנה Docker Image ונעלה אותו ל-Registry.
-#      #
-#      # ה-Registry יכול להיות GitHub Container Registry,
-#      # AWS ECR או Docker Hub — בהתאם ליעד הפריסה שנבחר.
-#
-#      # Placeholder בלבד — אינו מבצע כרגע פריסה אמיתית
-#      - name: Deploy to production
-#        run: |
-#          echo "This job is a placeholder for the production deployment."
-#          echo "Replace it with deployment commands after choosing a hosting provider."
+      # Publishes the exact jar that just passed CI so the deploy job can reuse it
+      # in the Docker image instead of rebuilding.
+      - name: Stage jar for deploy
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p build
+          cp target/*.jar build/app.jar
+
+      - name: Upload jar artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstore-jar
+          path: build/app.jar
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Production
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production
+
+    # Never deploys for pull_request events. workflow_dispatch is only honored when
+    # dispatched against the main branch itself (the dropdown lets you pick other refs).
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "reuse_existing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "reuse_existing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # OIDC federation - no long-lived AWS access keys stored in GitHub.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download jar artifact
+        if: steps.tag.outputs.reuse_existing != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: bookstore-jar
+          path: build
+
+      - name: Build and push image
+        if: steps.tag.outputs.reuse_existing != 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Verify image exists (rollback path)
+        if: steps.tag.outputs.reuse_existing == 'true'
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG"
+
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ vars.ECS_TASK_FAMILY }} \
+            --query taskDefinition > task-definition.json
+
+      - name: Render new image into task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: backend
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.tag.outputs.image_tag }}
+
+      - name: Deploy to ECS and wait for stability
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ vars.ECS_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          wait-for-service-stability: true

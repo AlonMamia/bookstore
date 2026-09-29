@@ -2,6 +2,8 @@ package com.alon.bookstore.auth;
 
 import com.alon.bookstore.user.Role;
 import com.alon.bookstore.user.RoleRepository;
+import com.alon.bookstore.user.UserDtoOut;
+import com.alon.bookstore.user.UserMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -20,6 +22,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final RoleRepository roleRepository;
+    private final UserMapper userMapper;
 
     @GetMapping("/csrf")
     public CsrfToken csrf(CsrfToken csrfToken) {
@@ -34,17 +37,16 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(
+    public UserDtoOut login(
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse
     ) {
-        return ResponseEntity.ok(
+        return
                 authService.login(
                         request,
                         httpRequest,
                         httpResponse
-                )
         );
     }
 

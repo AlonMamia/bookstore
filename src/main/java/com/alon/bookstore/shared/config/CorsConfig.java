@@ -10,7 +10,7 @@ import java.util.List;
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
-    @Value("${app.cors.allowed-origins:http://localhost:8080}")
+    @Value("${app.cors.allowed-origins:http://localhost:4200}")
     private String[] allowedOrigins;
 
     @Override

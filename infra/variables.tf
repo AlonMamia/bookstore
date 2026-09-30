@@ -194,6 +194,25 @@ variable "github_repo" {
   default     = "bookstore"
 }
 
+variable "github_org_id" {
+  description = <<-EOT
+    Numeric GitHub owner (org/user) ID, used together with github_org to build the OIDC
+    trust policy subject in GitHub's default immutable format
+    (repo:ORG@ORG_ID/REPO@REPO_ID:environment:NAME). Repos created after GitHub enabled this
+    format by default include these IDs in the token subject; verify your repo's actual
+    format with `gh api repos/<org>/<repo>/actions/oidc/customization/sub` before relying on
+    this default.
+  EOT
+  type        = string
+  default     = "95974813"
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID, used together with github_repo - see github_org_id."
+  type        = string
+  default     = "1370006649"
+}
+
 variable "create_github_oidc_provider" {
   description = <<-EOT
     Whether to create the GitHub Actions OIDC provider. AWS allows only one provider per

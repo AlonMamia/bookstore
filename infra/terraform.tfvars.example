@@ -9,6 +9,11 @@ prod_desired_count = 0
 
 github_org  = "AlonMamia"
 github_repo = "bookstore"
+# Numeric owner/repo IDs for GitHub's default immutable OIDC subject format - see
+# github_org_id/github_repo_id descriptions in variables.tf. Verify against
+# `gh api repos/<org>/<repo>/actions/oidc/customization/sub` before relying on defaults.
+github_org_id  = "95974813"
+github_repo_id = "1370006649"
 
 # No domain yet: leave certificate_arn empty and the ALB serves HTTP only. Once you own a
 # domain, request/validate an ACM certificate for it, set certificate_arn, set the two

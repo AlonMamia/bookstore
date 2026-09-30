@@ -61,6 +61,13 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 locals {
   github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+
+  # GitHub's default immutable OIDC subject format (repos created after it became the
+  # default) embeds owner/repo IDs alongside their names. Verify this matches your repo's
+  # actual format with `gh api repos/<org>/<repo>/actions/oidc/customization/sub` - if a
+  # custom (non-default) format is configured, update these locals to match it instead.
+  github_subject_pp   = "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:environment:pp"
+  github_subject_prod = "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:environment:production"
 }
 
 # One deploy role per environment, each trusted for exactly one branch ref and scoped to
@@ -82,7 +89,7 @@ data "aws_iam_policy_document" "deploy_assume_pp" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = ["repo:${var.github_org}/${var.github_repo}:environment:pp"]
+      values = [local.github_subject_pp]
     }
   }
 }
@@ -102,7 +109,7 @@ data "aws_iam_policy_document" "deploy_assume_prod" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = ["repo:${var.github_org}/${var.github_repo}:environment:production"]
+      values = [local.github_subject_prod]
     }
   }
 }

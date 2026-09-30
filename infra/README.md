@@ -109,8 +109,15 @@ pp. It does not deploy or activate production.
    `:bootstrap` image is not started.
 
 2. Create the GitHub Environment named exactly `pp` (do not configure or deploy the
-   `production` environment as part of this procedure). Set these **Environment variables**
-   from the Terraform outputs; none are secrets:
+   `production` environment as part of this procedure). On the `pp` environment, add a
+   **deployment branch restriction** limiting deployments to the `pp` branch only (GitHub
+   Environments → `pp` → "Deployment branches and tags" → "Selected branches and tags" →
+   add `pp`). When `production` is configured later, restrict it to the `main` branch only,
+   the same way. This backs the OIDC trust policy's `environment:` subject condition with a
+   GitHub-side control so a workflow run against the wrong branch cannot even reach the
+   environment's secrets/variables or request an OIDC token under it.
+
+   Set these **Environment variables** from the Terraform outputs; none are secrets:
 
    | GitHub `pp` variable | Terraform output |
    |---|---|

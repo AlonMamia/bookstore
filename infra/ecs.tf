@@ -155,7 +155,10 @@ resource "aws_ecs_service" "pp" {
     ignore_changes = [task_definition]
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [
+    aws_lb_listener_rule.pp_api_http,
+    aws_lb_listener_rule.pp_api_https,
+  ]
 
   tags = {
     Name        = "${var.project_name}-pp"
@@ -191,7 +194,10 @@ resource "aws_ecs_service" "prod" {
     ignore_changes = [task_definition]
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [
+    aws_lb_listener_rule.prod_api_http,
+    aws_lb_listener_rule.prod_api_https,
+  ]
 
   tags = {
     Name        = "${var.project_name}-prod"

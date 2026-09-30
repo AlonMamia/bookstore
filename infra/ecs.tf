@@ -129,7 +129,7 @@ resource "aws_ecs_service" "pp" {
   name            = "${var.project_name}-pp"
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.pp.arn
-  desired_count   = var.desired_count
+  desired_count   = var.pp_desired_count
   launch_type     = "FARGATE"
 
   network_configuration {
@@ -167,7 +167,7 @@ resource "aws_ecs_service" "prod" {
   name            = "${var.project_name}-prod"
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.prod.arn
-  desired_count   = var.desired_count
+  desired_count   = var.prod_desired_count
   launch_type     = "FARGATE"
 
   network_configuration {

@@ -3,9 +3,19 @@ output "alb_dns_name" {
   value       = aws_lb.this.dns_name
 }
 
+output "aws_region" {
+  description = "AWS region used by the pp GitHub Actions environment."
+  value       = var.aws_region
+}
+
 output "ecr_repository_url" {
-  description = "ECR repository URL. Set as the ECR_REPOSITORY GitHub Environment variable (repo name only, not the full URL, is also fine - see README)."
+  description = "Full ECR repository URL, including the registry hostname."
   value       = aws_ecr_repository.backend.repository_url
+}
+
+output "ecr_repository_name" {
+  description = "ECR repository name used by the GitHub Actions workflows."
+  value       = aws_ecr_repository.backend.name
 }
 
 output "ecs_cluster_name" {
@@ -14,6 +24,21 @@ output "ecs_cluster_name" {
 
 output "pp_service_name" {
   value = aws_ecs_service.pp.name
+}
+
+output "pp_hostname" {
+  description = "Host header routed to the pp API by the ALB."
+  value       = var.pp_hostname
+}
+
+output "pp_target_group_arn" {
+  description = "Target group used to check pp task health."
+  value       = aws_lb_target_group.pp.arn
+}
+
+output "pp_log_group_name" {
+  description = "CloudWatch log group for pp tasks."
+  value       = aws_cloudwatch_log_group.pp.name
 }
 
 output "prod_service_name" {

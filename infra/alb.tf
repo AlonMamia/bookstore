@@ -111,6 +111,7 @@ resource "aws_lb_listener" "https" {
 # "/*" rule added for the frontend, because they carry a lower priority number. Add the
 # frontend's rule(s) at priority >= 100 so /api/* keeps winning for both hosts.
 resource "aws_lb_listener_rule" "prod_api_http" {
+  count        = local.https_enabled ? 0 : 1
   listener_arn = aws_lb_listener.http.arn
   priority     = 10
 
@@ -133,6 +134,7 @@ resource "aws_lb_listener_rule" "prod_api_http" {
 }
 
 resource "aws_lb_listener_rule" "pp_api_http" {
+  count        = local.https_enabled ? 0 : 1
   listener_arn = aws_lb_listener.http.arn
   priority     = 20
 

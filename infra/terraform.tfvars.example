@@ -2,8 +2,10 @@
 # values if you consider any of them sensitive (none of these are secrets by default, but
 # your org's policy may differ).
 
-aws_region   = "us-east-1"
-project_name = "bookstore"
+aws_region         = "us-east-1"
+project_name       = "bookstore"
+pp_desired_count   = 0
+prod_desired_count = 0
 
 github_org  = "AlonMamia"
 github_repo = "bookstore"

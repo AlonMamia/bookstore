@@ -79,14 +79,23 @@ jobs:
 
       - name: Determine image tag
         id: tag
+        env:
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
-          if [ -n "${{ inputs.image_tag }}" ]; then
-            echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
-            echo "reuse_existing=true" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_IMAGE_TAG" ]; then
+            if [[ ! "$INPUT_IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "The supplied image tag is not a valid ECR tag." >&2
+              exit 1
+            fi
+            IMAGE_TAG="$INPUT_IMAGE_TAG"
+            EXPLICIT_TAG=true
           else
-            echo "image_tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            echo "reuse_existing=false" >> "$GITHUB_OUTPUT"
+            IMAGE_TAG="$COMMIT_SHA"
+            EXPLICIT_TAG=false
           fi
+          printf 'image_tag=%s\n' "$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          printf 'explicit_tag=%s\n' "$EXPLICIT_TAG" >> "$GITHUB_OUTPUT"
 
       # OIDC federation - no long-lived AWS access keys stored in GitHub.
       - name: Configure AWS credentials
@@ -99,15 +108,47 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Check whether image exists
+        id: image
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          EXPLICIT_TAG: ${{ steps.tag.outputs.explicit_tag }}
+        run: |
+          error_file="$(mktemp)"
+          trap 'rm -f "$error_file"' EXIT
+
+          set +e
+          aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            >/dev/null 2>"$error_file"
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "build_image=false" >> "$GITHUB_OUTPUT"
+          elif grep -Fq '(ImageNotFoundException)' "$error_file"; then
+            if [ "$EXPLICIT_TAG" = "true" ]; then
+              echo "The supplied image tag '$IMAGE_TAG' does not exist in ECR repository '$ECR_REPOSITORY'." >&2
+              exit 1
+            fi
+            echo "Image tag '$IMAGE_TAG' does not exist; building and pushing it."
+            echo "build_image=true" >> "$GITHUB_OUTPUT"
+          else
+            cat "$error_file" >&2
+            exit "$status"
+          fi
+
       - name: Download jar artifact
-        if: steps.tag.outputs.reuse_existing != 'true'
+        if: steps.image.outputs.build_image == 'true'
         uses: actions/download-artifact@v4
         with:
           name: bookstore-jar
           path: build
 
       - name: Build and push image
-        if: steps.tag.outputs.reuse_existing != 'true'
+        if: steps.image.outputs.build_image == 'true'
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
@@ -115,14 +156,6 @@ jobs:
         run: |
           docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
-      - name: Verify image exists (rollback path)
-        if: steps.tag.outputs.reuse_existing == 'true'
-        env:
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
-        run: |
-          aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG"
 
       - name: Download current task definition
         run: |

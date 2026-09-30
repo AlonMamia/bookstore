@@ -26,9 +26,11 @@ us-east-1, both environments running one small task each, month-to-month:
 | **Total** | **~$95–110/mo** | |
 
 **Cost-saving levers that don't expose RDS publicly:**
-- Scale the `pp` service to `desired_count = 0` when you're not actively testing against it
-  (`terraform apply -var desired_count=0` or edit the task count directly in the console for
-  a quick toggle) — saves ~$9/mo per idle stretch; NAT/ALB/RDS keep running since they're shared.
+- Both ECS services initially have zero tasks (`pp_desired_count = 0` and
+  `prod_desired_count = 0`). After deploying a real image, increase only `pp_desired_count`
+  to `1` when you're ready to run the pp service; leave `prod_desired_count` at `0` until
+  prod is ready to run. Reducing `pp_desired_count` back to `0` while pp is idle saves
+  ~$9/mo; NAT/ALB/RDS keep running since they're shared.
 - Use a Fargate Spot capacity provider for `pp` only (not prod) — ~70% cheaper compute for an
   environment that can tolerate interruption. Not implemented here; a reasonable follow-up.
 - Replace the NAT gateway with VPC endpoints (S3 gateway [free] + ECR api/dkr + logs interface
@@ -76,43 +78,174 @@ terraform validate
 `terraform plan`/`apply` need real AWS credentials and the state backend above — not run as
 part of this task.
 
-## GitHub Environments and required values
+## First deployment: pp only
 
-Create two GitHub Environments named exactly `pp` and `production` (matching what the
-workflows in `.github/workflows/` reference). Add these as **Environment variables** (not
-secrets — none of them are secret; the IAM trust policy, not secrecy of the ARN, is what
-protects the deploy role):
+This procedure provisions the shared infrastructure while leaving both ECS services stopped,
+deploys a real image to pp through the existing GitHub Actions workflow, and then starts only
+pp. It does not deploy or activate production.
 
-| Variable | Value | Source |
-|---|---|---|
-| `AWS_REGION` | e.g. `us-east-1` | `var.aws_region` |
-| `AWS_DEPLOY_ROLE_ARN` | per-environment | `pp_deploy_role_arn` / `prod_deploy_role_arn` output |
-| `ECR_REPOSITORY` | e.g. `bookstore-backend` | `var.ecr_repository_name` |
-| `ECS_CLUSTER` | e.g. `bookstore` | `ecs_cluster_name` output |
-| `ECS_SERVICE` | `bookstore-pp` / `bookstore-prod` | `pp_service_name` / `prod_service_name` output |
-| `ECS_TASK_FAMILY` | `bookstore-pp` / `bookstore-prod` | `pp_task_family` / `prod_task_family` output |
+1. Bootstrap the Terraform state backend as described above, copy the example variables, and
+   initialize Terraform:
 
-Optionally add required reviewers on the `production` environment for an extra manual gate
-before prod deploys run (native GitHub feature, not part of this Terraform).
+   ```bash
+   cd infra
+   cp terraform.tfvars.example terraform.tfvars
+   ```
 
-## Initial deployment sequence
+   Confirm `pp_desired_count = 0` and `prod_desired_count = 0` in `terraform.tfvars`; keep both
+   values at zero for the initial apply. Set `github_org` and `github_repo` to the repository
+   used by the workflows, then run:
 
-1. Bootstrap the state backend and run `terraform init` (above).
-2. `terraform fmt -check && terraform validate`.
-3. Copy `terraform.tfvars.example` to `terraform.tfvars`, fill in `github_org`/`github_repo`
-   and anything else you want to change, then `terraform plan` and review it carefully.
-4. `terraform apply`. The ECS services will come up with a placeholder `:bootstrap` image tag
-   that doesn't exist in ECR yet, so tasks will fail to start — that's expected.
-5. Read the outputs (`terraform output`) and populate the GitHub Environment variables above.
-6. Push to `pp` (or `main`). The `build-and-test` job runs CI; on success the `deploy` job
-   builds the real image, pushes it to ECR tagged with the commit SHA, registers a new task
-   definition revision pointing at it, updates the ECS service, and waits for the deployment
-   to stabilize (`wait-for-service-stability: true` — this is the "wait for it to become
-   healthy" step, backed by the ALB target group health check on `/api/actuator/health` and
-   the ECS deployment circuit breaker with automatic rollback).
-7. Once you own a domain: request/validate an ACM certificate, set `certificate_arn` and the
-   two `*_hostname` variables to match it, `terraform apply` again (adds the HTTPS listener +
-   HTTP→HTTPS redirect with no other changes), and point your DNS at the `alb_dns_name` output.
+   ```bash
+   terraform init
+   terraform fmt -check
+   terraform validate
+   terraform plan -var='pp_desired_count=0' -var='prod_desired_count=0' -out=first-deploy.tfplan
+   terraform show first-deploy.tfplan
+   terraform apply first-deploy.tfplan
+   ```
+
+   Review the plan before applying it. With both desired counts at zero, the placeholder
+   `:bootstrap` image is not started.
+
+2. Create the GitHub Environment named exactly `pp` (do not configure or deploy the
+   `production` environment as part of this procedure). Set these **Environment variables**
+   from the Terraform outputs; none are secrets:
+
+   | GitHub `pp` variable | Terraform output |
+   |---|---|
+   | `AWS_REGION` | `aws_region` |
+   | `AWS_DEPLOY_ROLE_ARN` | `pp_deploy_role_arn` |
+   | `ECR_REPOSITORY` | `ecr_repository_name` |
+   | `ECS_CLUSTER` | `ecs_cluster_name` |
+   | `ECS_SERVICE` | `pp_service_name` |
+   | `ECS_TASK_FAMILY` | `pp_task_family` |
+
+   From the `infra` directory, the GitHub CLI commands are:
+
+   ```bash
+   gh variable set AWS_REGION --env pp --body "$(terraform output -raw aws_region)"
+   gh variable set AWS_DEPLOY_ROLE_ARN --env pp --body "$(terraform output -raw pp_deploy_role_arn)"
+   gh variable set ECR_REPOSITORY --env pp --body "$(terraform output -raw ecr_repository_name)"
+   gh variable set ECS_CLUSTER --env pp --body "$(terraform output -raw ecs_cluster_name)"
+   gh variable set ECS_SERVICE --env pp --body "$(terraform output -raw pp_service_name)"
+   gh variable set ECS_TASK_FAMILY --env pp --body "$(terraform output -raw pp_task_family)"
+   gh variable list --env pp
+   ```
+
+3. Run the existing pp workflow against the `pp` branch, leaving its optional `image_tag`
+   input empty so the workflow uses that commit's SHA. Either push the intended application
+   commit to `pp`, or dispatch the workflow manually:
+
+   ```bash
+   gh workflow run pp.yml --ref pp
+   gh run list --workflow pp.yml --branch pp
+   gh run watch <run-id> --exit-status
+   ```
+
+   Confirm the successful run built and pushed the commit-SHA-tagged image, registered a new
+   task-definition revision, and updated the pp service. On a first deployment the image tag
+   should be absent, so the workflow builds and pushes it. If retrying a commit whose image
+   already exists, this workflow intentionally reuses that image instead of pushing it again.
+   The workflow is configured for `pp` pushes and manual dispatches on `pp`; it does not
+   deploy from pull requests or other manual-dispatch refs.
+
+   **A successful workflow while `desired_count` is zero does not prove that the application
+   works.** ECS can register the revision and report the service stable with no running tasks.
+   Record the task-definition ARN/revision and image tag selected by the service now; these
+   are the values to verify again after scaling:
+
+   ```bash
+   PP_CLUSTER="$(terraform output -raw ecs_cluster_name)"
+   PP_SERVICE="$(terraform output -raw pp_service_name)"
+   PP_DEPLOYED_TD="$(aws ecs describe-services --cluster "$PP_CLUSTER" --services "$PP_SERVICE" \
+     --query 'services[0].taskDefinition' --output text)"
+   printf 'Deployed pp task definition: %s\n' "$PP_DEPLOYED_TD"
+   aws ecs describe-task-definition --task-definition "$PP_DEPLOYED_TD" \
+     --query 'taskDefinition.{revision:revision,image:containerDefinitions[0].image}' --output table
+   ```
+
+4. Only after the workflow has deployed the real image, edit `terraform.tfvars` to set
+   `pp_desired_count = 1` and keep `prod_desired_count = 0`. Plan, review, and apply that
+   change:
+
+   ```bash
+   terraform plan -var='pp_desired_count=1' -var='prod_desired_count=0' -out=pp-scale.tfplan
+   terraform show pp-scale.tfplan
+   terraform apply pp-scale.tfplan
+   ```
+
+   Keep those values in `terraform.tfvars` so later Terraform runs do not scale pp back down.
+
+5. Verify the live pp deployment after scaling:
+
+   ```bash
+   PP_CLUSTER="$(terraform output -raw ecs_cluster_name)"
+   PP_SERVICE="$(terraform output -raw pp_service_name)"
+   PP_TD="$(aws ecs describe-services --cluster "$PP_CLUSTER" --services "$PP_SERVICE" \
+     --query 'services[0].taskDefinition' --output text)"
+   printf 'Current service task definition: %s\n' "$PP_TD"
+   aws ecs describe-task-definition --task-definition "$PP_TD" \
+     --query 'taskDefinition.{revision:revision,image:containerDefinitions[0].image}' --output table
+   aws ecs wait services-stable --cluster "$PP_CLUSTER" --services "$PP_SERVICE"
+   PP_TASK="$(aws ecs list-tasks --cluster "$PP_CLUSTER" --service-name "$PP_SERVICE" \
+     --desired-status RUNNING --query 'taskArns[0]' --output text)"
+   aws ecs describe-tasks --cluster "$PP_CLUSTER" --tasks "$PP_TASK" \
+     --query 'tasks[0].{taskDefinition:taskDefinitionArn,containers:containers[].{name:name,image:image,imageDigest:imageDigest,lastStatus:lastStatus}}' \
+     --output table
+   aws elbv2 describe-target-health \
+     --target-group-arn "$(terraform output -raw pp_target_group_arn)" \
+     --query 'TargetHealthDescriptions[].{state:TargetHealth.State,reason:TargetHealth.Reason}' \
+     --output table
+   ```
+
+   The task-definition ARN/revision must match the one recorded from the GitHub Actions
+   deployment, and its `backend` image must be the ECR image tagged with that workflow
+   commit's SHA—not `:bootstrap`. Confirm the running task's image and digest match that
+   revision. The pp target's state must become `healthy`.
+
+   Check the health endpoint through the configured pp host header. In the default
+   HTTP-only/no-DNS setup, `--connect-to` sends the configured hostname to the ALB while
+   preserving that hostname for ALB routing:
+
+   ```bash
+   PP_HOST="$(terraform output -raw pp_hostname)"
+   ALB_DNS="$(terraform output -raw alb_dns_name)"
+   curl --fail --show-error --connect-to "${PP_HOST}:80:${ALB_DNS}:80" \
+     "http://${PP_HOST}/api/actuator/health"
+   ```
+
+   If DNS is configured, use:
+
+   ```bash
+   curl --fail --show-error "http://${PP_HOST}/api/actuator/health"
+   ```
+
+   If HTTPS is enabled, test `https://${PP_HOST}/api/actuator/health` through the configured
+   DNS/ACM hostname.
+
+   Finally, inspect the pp task logs and confirm Spring Boot startup and Flyway/database
+   migration messages are present:
+
+   ```bash
+   aws logs tail "$(terraform output -raw pp_log_group_name)" --since 30m
+   ```
+
+   These runtime checks—not workflow success at zero tasks—establish that the app started,
+   migrations ran, the ALB target is healthy, and the health endpoint responds.
+
+## Terraform and pipeline task-definition ownership
+
+The Terraform task definitions ignore changes to `container_definitions`, and each ECS
+service ignores changes to `task_definition`. Therefore the pp workflow's registered
+task-definition revision and service selection are preserved when the later Terraform apply
+changes only `pp_desired_count`; Terraform will not replace the pipeline's real image with
+the initial `:bootstrap` definition. Production has the same lifecycle protection but remains
+at `prod_desired_count = 0` throughout this procedure.
+
+Once you own a domain, request/validate an ACM certificate, set `certificate_arn` and the
+`*_hostname` variables to match it, apply Terraform to add HTTPS + the HTTP-to-HTTPS redirect,
+and point DNS at the `alb_dns_name` output. This is outside the first pp deployment procedure.
 
 ## Rollback
 

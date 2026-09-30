@@ -82,7 +82,7 @@ data "aws_iam_policy_document" "deploy_assume_pp" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_repo}:ref:refs/heads/pp"]
+      values = ["repo:${var.github_org}/${var.github_repo}:environment:pp"]
     }
   }
 }
@@ -102,7 +102,7 @@ data "aws_iam_policy_document" "deploy_assume_prod" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main"]
+      values = ["repo:${var.github_org}/${var.github_repo}:environment:production"]
     }
   }
 }

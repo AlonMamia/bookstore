@@ -80,10 +80,16 @@ variable "fargate_memory" {
   default     = "512"
 }
 
-variable "desired_count" {
-  description = "Desired ECS task count per environment. Set to 0 to stop a service (e.g. pp) when idle to save cost."
+variable "pp_desired_count" {
+  description = "Desired ECS task count for pp."
   type        = number
-  default     = 1
+  default     = 0
+}
+
+variable "prod_desired_count" {
+  description = "Desired ECS task count for prod."
+  type        = number
+  default     = 0
 }
 
 variable "log_retention_days" {

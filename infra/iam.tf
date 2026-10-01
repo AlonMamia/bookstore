@@ -49,8 +49,8 @@ resource "aws_iam_role" "ecs_task" {
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.create_github_oidc_provider ? 1 : 0
 
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
   # GitHub's OIDC token-signing certificate thumbprints. Verify these are still current
   # against https://github.blog/changelog/ before applying if this has aged.
   thumbprint_list = [
@@ -89,7 +89,7 @@ data "aws_iam_policy_document" "deploy_assume_pp" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [local.github_subject_pp]
+      values   = [local.github_subject_pp]
     }
   }
 }
@@ -109,7 +109,7 @@ data "aws_iam_policy_document" "deploy_assume_prod" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [local.github_subject_prod]
+      values   = [local.github_subject_prod]
     }
   }
 }
@@ -134,7 +134,7 @@ data "aws_iam_policy_document" "deploy_pp" {
   }
 
   statement {
-    sid    = "EcrPushPull"
+    sid = "EcrPushPull"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:PutImage",
@@ -189,7 +189,7 @@ data "aws_iam_policy_document" "deploy_prod" {
   }
 
   statement {
-    sid    = "EcrPushPull"
+    sid = "EcrPushPull"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:PutImage",

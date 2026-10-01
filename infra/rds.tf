@@ -32,15 +32,15 @@ resource "aws_db_instance" "this" {
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  multi_az                = false
-  publicly_accessible     = false
+  multi_az               = false
+  publicly_accessible    = false
 
   backup_retention_period = var.rds_backup_retention_period
   backup_window           = "03:00-04:00"
   maintenance_window      = "mon:04:30-mon:05:30"
 
-  deletion_protection = var.rds_deletion_protection
-  skip_final_snapshot = var.rds_skip_final_snapshot
+  deletion_protection       = var.rds_deletion_protection
+  skip_final_snapshot       = var.rds_skip_final_snapshot
   final_snapshot_identifier = var.rds_skip_final_snapshot ? null : "${var.project_name}-db-final"
 
   tags = {

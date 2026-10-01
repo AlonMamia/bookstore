@@ -21,7 +21,7 @@ resource "aws_ecs_cluster" "this" {
 # commit-sha-tagged image and updates the service - see infra/README.md's deploy sequence.
 
 locals {
-  pp_db_url = "jdbc:postgresql://${aws_db_instance.this.address}:5432/${var.rds_database_name}?currentSchema=${var.pp_db_schema}"
+  pp_db_url   = "jdbc:postgresql://${aws_db_instance.this.address}:5432/${var.rds_database_name}?currentSchema=${var.pp_db_schema}"
   prod_db_url = "jdbc:postgresql://${aws_db_instance.this.address}:5432/${var.rds_database_name}?currentSchema=${var.prod_db_schema}"
 }
 
@@ -29,10 +29,10 @@ resource "aws_ecs_task_definition" "pp" {
   family                   = "${var.project_name}-pp"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                       = var.fargate_cpu
-  memory                    = var.fargate_memory
-  execution_role_arn        = aws_iam_role.ecs_task_execution.arn
-  task_role_arn             = aws_iam_role.ecs_task.arn
+  cpu                      = var.fargate_cpu
+  memory                   = var.fargate_memory
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
     {
@@ -78,10 +78,10 @@ resource "aws_ecs_task_definition" "prod" {
   family                   = "${var.project_name}-prod"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                       = var.fargate_cpu
-  memory                    = var.fargate_memory
-  execution_role_arn        = aws_iam_role.ecs_task_execution.arn
-  task_role_arn             = aws_iam_role.ecs_task.arn
+  cpu                      = var.fargate_cpu
+  memory                   = var.fargate_memory
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
     {

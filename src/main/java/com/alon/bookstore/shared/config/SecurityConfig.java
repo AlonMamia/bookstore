@@ -75,6 +75,11 @@ public class SecurityConfig {
                                 "/api/auth/csrf"
                         ).permitAll()
 
+                        .requestMatchers(
+                                "/api/actuator/health",
+                                "/api/actuator/health/**"
+                        ).permitAll()
+
                         .requestMatchers("/api/admin/**")
                         .hasRole("ADMIN")
 

@@ -11,8 +11,13 @@ on:
     branches:
       - pp
 
-  # מאפשר להריץ את ה-Workflow ידנית דרך GitHub Actions
+  # מאפשר להריץ את ה-Workflow ידנית דרך GitHub Actions, ומאפשר rollback ל-tag קודם
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Existing ECR image tag to (re)deploy, e.g. for rollback. Leave empty to build+deploy the current commit."
+        required: false
+        type: string
 
 jobs:
   build-and-test:
@@ -36,27 +41,140 @@ jobs:
       - name: Build and test
         run: mvn --batch-mode clean verify
 
-# נוסיף את ה-job הזה כאשר יהיה יעד אמיתי לפריסת Pre-Production.
-#
-#  deploy:
-#    name: Deploy to Pre-Production
-#
-#    # הפריסה תתחיל רק לאחר שה-build והבדיקות הסתיימו בהצלחה
-#    needs: build-and-test
-#
-#    runs-on: ubuntu-latest
-#
-#    # מקשר את ה-job ל-GitHub Environment בשם pp.
-#    # שם נוכל להגדיר secrets, הרשאות וכללי אישור לפריסה.
-#    environment: pp
-#
-#    steps:
-#      # כל job רץ על מכונה חדשה, ולכן צריך להוריד שוב את הקוד
-#      - name: Checkout repository
-#        uses: actions/checkout@v4
-#
-#      # Placeholder בלבד — אינו מבצע כרגע פריסה אמיתית
-#      - name: Deploy to pre-production
-#        run: |
-#          echo "This job is a placeholder for the pre-production deployment."
-#          echo "Replace it with deployment commands after choosing a hosting provider."
+      # Publishes the exact jar that just passed CI so the deploy job can reuse it
+      # in the Docker image instead of rebuilding.
+      - name: Stage jar for deploy
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p build
+          cp target/*.jar build/app.jar
+
+      - name: Upload jar artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstore-jar
+          path: build/app.jar
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Pre-Production
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: pp
+
+    # Never deploys for pull_request events. workflow_dispatch is only honored when
+    # dispatched against the pp branch itself (the dropdown lets you pick other refs).
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/pp')
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        env:
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ -n "$INPUT_IMAGE_TAG" ]; then
+            if [[ ! "$INPUT_IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "The supplied image tag is not a valid ECR tag." >&2
+              exit 1
+            fi
+            IMAGE_TAG="$INPUT_IMAGE_TAG"
+            EXPLICIT_TAG=true
+          else
+            IMAGE_TAG="$COMMIT_SHA"
+            EXPLICIT_TAG=false
+          fi
+          printf 'image_tag=%s\n' "$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          printf 'explicit_tag=%s\n' "$EXPLICIT_TAG" >> "$GITHUB_OUTPUT"
+
+      # OIDC federation - no long-lived AWS access keys stored in GitHub.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Check whether image exists
+        id: image
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+          EXPLICIT_TAG: ${{ steps.tag.outputs.explicit_tag }}
+        run: |
+          error_file="$(mktemp)"
+          trap 'rm -f "$error_file"' EXIT
+
+          set +e
+          aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            >/dev/null 2>"$error_file"
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "build_image=false" >> "$GITHUB_OUTPUT"
+          elif grep -Fq '(ImageNotFoundException)' "$error_file"; then
+            if [ "$EXPLICIT_TAG" = "true" ]; then
+              echo "The supplied image tag '$IMAGE_TAG' does not exist in ECR repository '$ECR_REPOSITORY'." >&2
+              exit 1
+            fi
+            echo "Image tag '$IMAGE_TAG' does not exist; building and pushing it."
+            echo "build_image=true" >> "$GITHUB_OUTPUT"
+          else
+            cat "$error_file" >&2
+            exit "$status"
+          fi
+
+      - name: Download jar artifact
+        if: steps.image.outputs.build_image == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: bookstore-jar
+          path: build
+
+      - name: Build and push image
+        if: steps.image.outputs.build_image == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ vars.ECS_TASK_FAMILY }} \
+            --query taskDefinition > task-definition.json
+
+      - name: Render new image into task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: backend
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.tag.outputs.image_tag }}
+
+      - name: Deploy to ECS and wait for stability
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ vars.ECS_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          wait-for-service-stability: true

@@ -1,0 +1,15 @@
+# Rename this file to backend.tf (or pass an equivalent -backend-config file) once the
+# one-time state bucket + lock table exist. See README.md "Terraform state setup" for the
+# exact bootstrap commands. Never commit backend.tf with real values if the bucket name is
+# considered sensitive; bucket/table names alone are not secrets, but keep this file out of
+# version control if your org's policy requires it.
+
+terraform {
+  backend "s3" {
+    bucket         = "REPLACE_ME-bookstore-tfstate"
+    key            = "backend/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "REPLACE_ME-bookstore-tfstate-lock"
+    encrypt        = true
+  }
+}

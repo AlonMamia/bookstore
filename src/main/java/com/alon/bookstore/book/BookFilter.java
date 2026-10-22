@@ -7,6 +7,6 @@ public record BookFilter(
        String category,
        BigDecimal minPrice,
        BigDecimal maxPrice,
-       boolean availableOnly
+       Boolean availableOnly
 ) {
 }

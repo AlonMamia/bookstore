@@ -41,6 +41,16 @@ jobs:
       - name: Build and test
         run: mvn --batch-mode clean verify
 
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports
+            target/failsafe-reports
+          retention-days: 7
+
       # Publishes the exact jar that just passed CI so the deploy job can reuse it
       # in the Docker image instead of rebuilding.
       - name: Stage jar for deploy

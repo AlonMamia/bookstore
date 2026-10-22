@@ -37,12 +37,11 @@ public class BookSpecification {
             }
 
             if (bookFilter.category() != null && !bookFilter.category().isBlank()) {
-                String pattern =
-                        "%" + bookFilter.category().trim().toLowerCase() + "%";
+                String category = bookFilter.category().trim().toLowerCase();
 
                 predicates.add(criteriaBuilder.equal(
                         criteriaBuilder.lower(root.get("category")),
-                        pattern
+                        category
                 ));
             }
 
@@ -57,7 +56,7 @@ public class BookSpecification {
                         criteriaBuilder.lessThanOrEqualTo(root.get("price"), bookFilter.maxPrice())
                 );
             }
-            if (bookFilter.availableOnly()) {
+            if (Boolean.TRUE.equals(bookFilter.availableOnly())) {
                 predicates.add(criteriaBuilder.greaterThan(root.get("stockQuantity"), 0));
             }
 

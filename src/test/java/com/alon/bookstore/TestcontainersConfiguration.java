@@ -7,12 +7,15 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @TestConfiguration(proxyBeanMethods = false)
-class TestcontainersConfiguration {
+public class TestcontainersConfiguration {
 
 	@Bean
 	@ServiceConnection
 	PostgreSQLContainer postgresContainer() {
-		return new PostgreSQLContainer(DockerImageName.parse("postgres:latest"));
+		// Pinned to match the deployment target (infra/variables.tf: rds_engine_version
+		// = "16.4") instead of floating on "latest", which can silently drift to a
+		// version the app was never actually tested against.
+		return new PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"));
 	}
 
 }
